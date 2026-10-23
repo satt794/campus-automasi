@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/class-reminder",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/task-reminder",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}
