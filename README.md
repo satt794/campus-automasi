@@ -85,3 +85,6 @@ Buka browser dan akses aplikasi di: [http://localhost:3000](http://localhost:300
 2. Impor project ke **Vercel**.
 3. Daftarkan seluruh *Environment Variables* dari `.env.local` ke menu **Settings > Environment Variables** di dashboard Vercel.
 4. Vercel akan otomatis mengenali konfigurasi cron job yang tertera pada file `vercel.json`.
+
+
+<!-- deployment-trigger: 2026-10-24T10:52:42.493Z -->
