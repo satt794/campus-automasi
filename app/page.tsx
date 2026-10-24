@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Navbar } from "@/components/Navbar";
 import { FinanceSection } from "@/components/FinanceSection";
@@ -9,6 +9,7 @@ import { TaskManagementSection } from "@/components/TaskManagementSection";
 import { QuickNotesSection } from "@/components/QuickNotesSection";
 import { FileManagerSection } from "@/components/FileManagerSection";
 import { TelegramSettingsModal } from "@/components/TelegramSettingsModal";
+import { AuthModal } from "@/components/AuthModal";
 import {
   Wallet,
   Calendar,
@@ -22,44 +23,102 @@ import {
 export default function DashboardPage() {
   const supabase = createClient();
   const [userId, setUserId] = useState<string | undefined>(undefined);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("overview");
-  const [telegramChatId, setTelegramChatId] = useState<number | null>(7455955755);
+  const [telegramChatId, setTelegramChatId] = useState<number | null>(null);
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
-  useEffect(() => {
-    async function initUser() {
+  const initUser = useCallback(async () => {
+    try {
+      // 1. Check existing authenticated session
       const {
-        data: { user },
+        data: { user: currentUser },
       } = await supabase.auth.getUser();
 
-      if (user) {
-        setUserId(user.id);
+      let activeUser = currentUser;
+
+      // 2. If no user session, auto sign-in to demo account so everything works out of the box
+      if (!activeUser) {
+        try {
+          await fetch("/api/auth/ensure-demo", { method: "POST" });
+          const { data: signInData } = await supabase.auth.signInWithPassword({
+            email: "demo@campusautomasi.local",
+            password: "CampusAutomasiDemoPassword123!",
+          });
+          activeUser = signInData?.user || null;
+        } catch (e) {
+          console.error("Auto demo sign-in error:", e);
+        }
+      }
+
+      if (activeUser) {
+        setUserId(activeUser.id);
+        setUserEmail(activeUser.email || "Mahasiswa");
+
         const { data: profile } = await supabase
           .from("profiles")
           .select("telegram_chat_id")
-          .eq("id", user.id)
+          .eq("id", activeUser.id)
           .maybeSingle();
 
         if (profile?.telegram_chat_id) {
           setTelegramChatId(profile.telegram_chat_id);
+        } else {
+          setTelegramChatId(null);
         }
       } else {
-        // Fallback demo user ID for immediate local inspection
-        setUserId("00000000-0000-0000-0000-000000000001");
+        setUserId(undefined);
+        setUserEmail(null);
+        setTelegramChatId(null);
       }
+    } catch (err) {
+      console.error("Auth init error:", err);
     }
-
-    initUser();
   }, [supabase]);
+
+  useEffect(() => {
+    initUser();
+
+    // Listen for auth state changes (login, logout, switch account)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        setUserId(session.user.id);
+        setUserEmail(session.user.email || "Mahasiswa");
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("telegram_chat_id")
+          .eq("id", session.user.id)
+          .maybeSingle();
+
+        if (profile?.telegram_chat_id) {
+          setTelegramChatId(profile.telegram_chat_id);
+        } else {
+          setTelegramChatId(null);
+        }
+      } else {
+        // If logged out, re-run initUser to re-attach demo account cleanly
+        initUser();
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [initUser, supabase]);
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
-      {/* Sticky Header with Navigation & Theme Toggle */}
+      {/* Sticky Header with Navigation, Auth & Theme Toggle */}
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         telegramChatId={telegramChatId}
         onOpenTelegramSettings={() => setIsTelegramModalOpen(true)}
+        userEmail={userEmail}
+        onOpenAuthModal={() => setIsAuthModalOpen(true)}
       />
 
       {/* Main Container */}
@@ -204,7 +263,7 @@ export default function DashboardPage() {
         Campus Automasi &copy; {new Date().getFullYear()} — Dirancang untuk Efisiensi & Produktivitas Mahasiswa.
       </footer>
 
-      {/* User Self-Service Telegram Settings Modal */}
+      {/* Telegram Settings Modal */}
       <TelegramSettingsModal
         isOpen={isTelegramModalOpen}
         onClose={() => setIsTelegramModalOpen(false)}
@@ -213,6 +272,14 @@ export default function DashboardPage() {
         onSaveSuccess={(newId) => {
           setTelegramChatId(newId);
         }}
+      />
+
+      {/* Auth Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        currentUserEmail={userEmail}
+        onAuthSuccess={() => initUser()}
       />
     </div>
   );

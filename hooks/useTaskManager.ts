@@ -91,11 +91,13 @@ export function useTaskManager(userId: string | undefined) {
         prev.map((t) => (t.id === id ? { ...t, is_completed: !currentStatus } : t))
       );
     }
+    return { error };
   };
 
   const deleteTask = async (id: string) => {
     const { error } = await supabase.from("tasks").delete().eq("id", id);
     if (!error) setTasks((prev) => prev.filter((t) => t.id !== id));
+    return { error };
   };
 
   return {

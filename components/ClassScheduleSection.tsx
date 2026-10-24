@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useClassSchedule, DAYS_OF_WEEK } from "@/hooks/useClassSchedule";
 import {
   Calendar,
@@ -12,6 +12,7 @@ import {
   Send,
   CheckCircle,
   AlertCircle,
+  Loader2,
 } from "lucide-react";
 
 interface ClassScheduleSectionProps {
@@ -36,37 +37,73 @@ export function ClassScheduleSection({ userId }: ClassScheduleSectionProps) {
   const [room, setRoom] = useState("");
   const [lecturer, setLecturer] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
 
   // Telegram test state
   const [inputChatId, setInputChatId] = useState(telegramChatId ? String(telegramChatId) : "");
   const [testStatus, setTestStatus] = useState<string | null>(null);
   const [isTesting, setIsTesting] = useState(false);
 
+  useEffect(() => {
+    if (telegramChatId) {
+      setInputChatId(String(telegramChatId));
+    }
+  }, [telegramChatId]);
+
   const handleAddClass = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!courseName.trim()) return;
 
     setIsSubmitting(true);
-    await addClass({
+    setFeedback(null);
+
+    const res = await addClass({
       course_name: courseName.trim(),
       day_of_week: dayOfWeek,
-      start_time: startTime + ":00",
-      end_time: endTime + ":00",
+      start_time: startTime.length === 5 ? startTime + ":00" : startTime,
+      end_time: endTime.length === 5 ? endTime + ":00" : endTime,
       room: room.trim() || undefined,
       lecturer: lecturer.trim() || undefined,
     });
 
-    setCourseName("");
-    setRoom("");
-    setLecturer("");
+    if (res?.error) {
+      setFeedback({
+        type: "error",
+        message: `Gagal menyimpan jadwal: ${res.error.message || "Pastikan Anda sudah login"}`,
+      });
+    } else {
+      setFeedback({
+        type: "success",
+        message: `Jadwal "${courseName.trim()}" berhasil ditambahkan!`,
+      });
+      setCourseName("");
+      setRoom("");
+      setLecturer("");
+      setTimeout(() => setFeedback(null), 3500);
+    }
     setIsSubmitting(false);
+  };
+
+  const handleDeleteClass = async (id: string, name: string) => {
+    if (!confirm(`Hapus jadwal "${name}"?`)) return;
+    const res = await deleteClass(id);
+    if (res?.error) {
+      alert(`Gagal menghapus: ${res.error.message}`);
+    }
   };
 
   const handleSaveTelegram = async () => {
     const num = parseInt(inputChatId, 10);
     if (!isNaN(num)) {
-      await updateTelegramChatId(num);
-      setTestStatus("Chat ID berhasil disimpan!");
+      const res = await updateTelegramChatId(num);
+      if (res?.error) {
+        setTestStatus(`❌ Gagal menyimpan Chat ID: ${res.error.message}`);
+      } else {
+        setTestStatus("✅ Chat ID berhasil disimpan ke akun Anda!");
+      }
       setTimeout(() => setTestStatus(null), 3000);
     }
   };
@@ -86,7 +123,7 @@ export function ClassScheduleSection({ userId }: ClassScheduleSectionProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chatId: targetChatId,
-          message: "🔔 *Tes Notifikasi Campus Automasi!*\n\nBot berhasil terhubung ke akun Anda! Anda akan menerima pengingat otomatis 1 jam sebelum jadwal kuliah dimulai. 🎓",
+          message: "🔔 *Tes Notifikasi Campus Automasi!*\\n\\nBot berhasil terhubung ke akun Anda! Anda akan menerima pengingat otomatis 1 jam sebelum jadwal kuliah dimulai. 🎓",
         }),
       });
 
@@ -121,21 +158,23 @@ export function ClassScheduleSection({ userId }: ClassScheduleSectionProps) {
           <div className="flex flex-wrap items-center gap-2">
             <input
               type="text"
-              placeholder="Masukkan Chat ID"
+              placeholder="Chat ID (misal: 7455955755)"
               value={inputChatId}
               onChange={(e) => setInputChatId(e.target.value)}
-              className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 w-44"
+              className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 w-44"
             />
             <button
               onClick={handleSaveTelegram}
-              className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium transition-colors"
+              type="button"
+              className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium transition-colors shadow-xs"
             >
               Simpan ID
             </button>
             <button
               onClick={handleTestTelegram}
               disabled={isTesting}
-              className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-medium transition-colors"
+              type="button"
+              className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 transition-colors disabled:opacity-50"
             >
               {isTesting ? "Mengirim..." : "Kirim Tes"}
             </button>
@@ -143,9 +182,8 @@ export function ClassScheduleSection({ userId }: ClassScheduleSectionProps) {
         </div>
 
         {testStatus && (
-          <div className="mt-3 text-xs flex items-center space-x-1.5 text-indigo-600 dark:text-indigo-400 font-medium">
-            {testStatus.includes("✅") ? <CheckCircle className="w-4 h-4 text-emerald-500" /> : <AlertCircle className="w-4 h-4 text-amber-500" />}
-            <span>{testStatus}</span>
+          <div className="mt-3 text-xs font-medium text-indigo-600 dark:text-indigo-400">
+            {testStatus}
           </div>
         )}
       </div>
@@ -158,6 +196,23 @@ export function ClassScheduleSection({ userId }: ClassScheduleSectionProps) {
             <PlusCircle className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
             <span>Tambah Jadwal Kuliah</span>
           </h3>
+
+          {feedback && (
+            <div
+              className={`mb-4 p-3 rounded-xl flex items-center space-x-2 text-xs font-medium ${
+                feedback.type === "success"
+                  ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
+                  : "bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800"
+              }`}
+            >
+              {feedback.type === "success" ? (
+                <CheckCircle className="w-4 h-4 flex-shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              )}
+              <span>{feedback.message}</span>
+            </div>
+          )}
 
           <form onSubmit={handleAddClass} className="space-y-4">
             <div>
@@ -247,9 +302,16 @@ export function ClassScheduleSection({ userId }: ClassScheduleSectionProps) {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm transition-colors shadow-sm disabled:opacity-50"
+              className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center space-x-1.5"
             >
-              {isSubmitting ? "Menyimpan..." : "Simpan Jadwal"}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Menyimpan...</span>
+                </>
+              ) : (
+                <span>Simpan Jadwal</span>
+              )}
             </button>
           </form>
         </div>
@@ -265,8 +327,9 @@ export function ClassScheduleSection({ userId }: ClassScheduleSectionProps) {
 
           <div className="space-y-3 flex-1 overflow-y-auto max-h-[460px] pr-1">
             {loading ? (
-              <div className="text-center py-10 text-sm text-slate-400">
-                Memuat jadwal perkuliahan...
+              <div className="text-center py-10 text-sm text-slate-400 flex flex-col items-center justify-center space-y-2">
+                <Loader2 className="w-5 h-5 animate-spin text-indigo-500" />
+                <span>Memuat jadwal perkuliahan...</span>
               </div>
             ) : classes.length === 0 ? (
               <div className="text-center py-10 text-sm text-slate-400">
@@ -311,7 +374,7 @@ export function ClassScheduleSection({ userId }: ClassScheduleSectionProps) {
                   </div>
 
                   <button
-                    onClick={() => deleteClass(cls.id)}
+                    onClick={() => handleDeleteClass(cls.id, cls.course_name)}
                     className="p-2 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
                     title="Hapus Kelas"
                   >

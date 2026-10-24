@@ -2,13 +2,15 @@
 
 import React from "react";
 import { ThemeToggle } from "./theme-toggle";
-import { GraduationCap, Bell, ShieldCheck, Settings } from "lucide-react";
+import { GraduationCap, Bell, ShieldCheck, Settings, User } from "lucide-react";
 
 interface NavbarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   telegramChatId: number | null;
   onOpenTelegramSettings: () => void;
+  userEmail?: string | null;
+  onOpenAuthModal?: () => void;
 }
 
 export function Navbar({
@@ -16,6 +18,8 @@ export function Navbar({
   setActiveTab,
   telegramChatId,
   onOpenTelegramSettings,
+  userEmail,
+  onOpenAuthModal,
 }: NavbarProps) {
   const tabs = [
     { id: "overview", label: "Dashboard" },
@@ -68,8 +72,25 @@ export function Navbar({
             })}
           </nav>
 
-          {/* Actions: Telegram Status & Theme Toggle */}
+          {/* Actions: User Auth, Telegram Status & Theme Toggle */}
           <div className="flex items-center space-x-2 sm:space-x-3">
+            {/* User Account Button */}
+            <button
+              onClick={onOpenAuthModal}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-all hover:scale-105"
+              title="Pengaturan Akun"
+            >
+              <User className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span className="max-w-[110px] truncate">
+                {userEmail
+                  ? userEmail.includes("demo@")
+                    ? "Mode Demo"
+                    : userEmail.split("@")[0]
+                  : "Akun"}
+              </span>
+            </button>
+
+            {/* Telegram Bot Button */}
             <button
               onClick={onOpenTelegramSettings}
               className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all hover:scale-105 ${
@@ -82,12 +103,12 @@ export function Navbar({
               {telegramChatId ? (
                 <>
                   <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>Bot Terhubung</span>
+                  <span className="hidden sm:inline">Bot Terhubung</span>
                 </>
               ) : (
                 <>
                   <Bell className="w-3.5 h-3.5" />
-                  <span>Atur Bot</span>
+                  <span className="hidden sm:inline">Atur Bot</span>
                 </>
               )}
               <Settings className="w-3 h-3 ml-0.5 opacity-60" />

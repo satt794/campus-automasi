@@ -14,6 +14,9 @@ import {
   Printer,
   MoreHorizontal,
   Sliders,
+  CheckCircle,
+  AlertCircle,
+  Loader2,
 } from "lucide-react";
 
 interface FinanceSectionProps {
@@ -52,6 +55,10 @@ export function FinanceSection({ userId }: FinanceSectionProps) {
   const [amount, setAmount] = useState<string>("");
   const [note, setNote] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
 
   // Budget Edit Modal / State
   const [isEditingBudget, setIsEditingBudget] = useState(false);
@@ -63,14 +70,37 @@ export function FinanceSection({ userId }: FinanceSectionProps) {
     if (isNaN(num) || num <= 0) return;
 
     setIsSubmitting(true);
-    await addTransaction({
+    setFeedback(null);
+
+    const res = await addTransaction({
       category,
       amount: num,
       note: note.trim() || undefined,
     });
-    setAmount("");
-    setNote("");
+
+    if (res?.error) {
+      setFeedback({
+        type: "error",
+        message: `Gagal mencatat transaksi: ${res.error.message || "Pastikan Anda sudah login"}`,
+      });
+    } else {
+      setFeedback({
+        type: "success",
+        message: `Transaksi ${formatRupiah(num)} berhasil dicatat!`,
+      });
+      setAmount("");
+      setNote("");
+      setTimeout(() => setFeedback(null), 3500);
+    }
     setIsSubmitting(false);
+  };
+
+  const handleDeleteTransaction = async (id: string) => {
+    if (!confirm("Hapus catatan transaksi ini?")) return;
+    const res = await deleteTransaction(id);
+    if (res?.error) {
+      alert(`Gagal menghapus transaksi: ${res.error.message}`);
+    }
   };
 
   const handleSaveBudget = async () => {
@@ -184,6 +214,23 @@ export function FinanceSection({ userId }: FinanceSectionProps) {
             <span>Tambah Transaksi</span>
           </h3>
 
+          {feedback && (
+            <div
+              className={`mb-4 p-3 rounded-xl flex items-center space-x-2 text-xs font-medium ${
+                feedback.type === "success"
+                  ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
+                  : "bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800"
+              }`}
+            >
+              {feedback.type === "success" ? (
+                <CheckCircle className="w-4 h-4 flex-shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              )}
+              <span>{feedback.message}</span>
+            </div>
+          )}
+
           <form onSubmit={handleAddTransaction} className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
@@ -233,9 +280,16 @@ export function FinanceSection({ userId }: FinanceSectionProps) {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm transition-colors shadow-sm disabled:opacity-50"
+              className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center space-x-1.5"
             >
-              {isSubmitting ? "Menyimpan..." : "Simpan Pengeluaran"}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Menyimpan...</span>
+                </>
+              ) : (
+                <span>Simpan Pengeluaran</span>
+              )}
             </button>
           </form>
         </div>
@@ -251,8 +305,9 @@ export function FinanceSection({ userId }: FinanceSectionProps) {
 
           <div className="space-y-2 flex-1 overflow-y-auto max-h-[350px] pr-1">
             {loading ? (
-              <div className="text-center py-10 text-sm text-slate-400">
-                Memuat riwayat transaksi...
+              <div className="text-center py-10 text-sm text-slate-400 flex flex-col items-center justify-center space-y-2">
+                <Loader2 className="w-5 h-5 animate-spin text-indigo-500" />
+                <span>Memuat riwayat transaksi...</span>
               </div>
             ) : transactions.length === 0 ? (
               <div className="text-center py-10 text-sm text-slate-400">
@@ -283,7 +338,7 @@ export function FinanceSection({ userId }: FinanceSectionProps) {
                       -{formatRupiah(tx.amount)}
                     </span>
                     <button
-                      onClick={() => deleteTransaction(tx.id)}
+                      onClick={() => handleDeleteTransaction(tx.id)}
                       className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
                       title="Hapus Transaksi"
                     >
@@ -319,13 +374,13 @@ export function FinanceSection({ userId }: FinanceSectionProps) {
             <div className="flex justify-end space-x-2">
               <button
                 onClick={() => setIsEditingBudget(false)}
-                className="px-3.5 py-1.5 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="px-3.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 Batal
               </button>
               <button
                 onClick={handleSaveBudget}
-                className="px-4 py-1.5 rounded-xl text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
+                className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium"
               >
                 Simpan
               </button>

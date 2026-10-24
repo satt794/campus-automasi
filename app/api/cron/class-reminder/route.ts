@@ -19,37 +19,49 @@ export async function GET(req: NextRequest) {
   const hours = String(targetTime.getHours()).padStart(2, "0");
   const minutes = String(targetTime.getMinutes()).padStart(2, "0");
 
-  const { data: upcomingClasses, error } = await supabaseAdmin
+  const { data: upcomingClasses, error: classError } = await supabaseAdmin
     .from("classes")
-    .select(`
-      id,
-      course_name,
-      start_time,
-      room,
-      lecturer,
-      user_id,
-      profiles!inner(telegram_chat_id)
-    `)
+    .select("id, course_name, start_time, room, lecturer, user_id")
     .eq("day_of_week", dayOfWeek)
     .gte("start_time", `${hours}:${minutes}:00`)
     .lte("start_time", `${hours}:${minutes}:59`)
     .eq("is_active", true);
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (classError) {
+    return NextResponse.json({ error: classError.message }, { status: 500 });
   }
 
+  if (!upcomingClasses || upcomingClasses.length === 0) {
+    return NextResponse.json({
+      success: true,
+      target_time: `${hours}:${minutes}:00`,
+      notifications_sent: 0,
+    });
+  }
+
+  const userIds = Array.from(new Set(upcomingClasses.map((c) => c.user_id)));
+  const { data: profiles, error: profileError } = await supabaseAdmin
+    .from("profiles")
+    .select("id, telegram_chat_id")
+    .in("id", userIds);
+
+  if (profileError) {
+    return NextResponse.json({ error: profileError.message }, { status: 500 });
+  }
+
+  const profileMap = new Map((profiles || []).map((p) => [p.id, p.telegram_chat_id]));
+
   let sentCount = 0;
-  for (const item of upcomingClasses || []) {
-    const profile = item.profiles as unknown as { telegram_chat_id: number | null };
-    if (profile?.telegram_chat_id) {
+  for (const item of upcomingClasses) {
+    const telegramChatId = profileMap.get(item.user_id);
+    if (telegramChatId) {
       const msg = `🔔 *Pengingat Kelas (1 Jam Lagi)*\n\n` +
                   `📚 *Mata Kuliah:* ${item.course_name}\n` +
                   `⏰ *Waktu:* ${item.start_time.slice(0, 5)}\n` +
                   `📍 *Ruangan:* ${item.room || "-"}\n` +
                   `👨‍🏫 *Dosen:* ${item.lecturer || "-"}`;
-      
-      const ok = await sendTelegramMessage(profile.telegram_chat_id, msg);
+
+      const ok = await sendTelegramMessage(telegramChatId, msg);
       if (ok) sentCount++;
     }
   }

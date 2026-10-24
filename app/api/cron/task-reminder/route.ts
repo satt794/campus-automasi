@@ -13,29 +13,39 @@ export async function GET(req: NextRequest) {
   const now = new Date();
   const threeDaysLater = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
 
-  const { data: urgentTasks, error } = await supabaseAdmin
+  const { data: urgentTasks, error: taskError } = await supabaseAdmin
     .from("tasks")
-    .select(`
-      id,
-      title,
-      deadline,
-      user_id,
-      profiles!inner(telegram_chat_id)
-    `)
+    .select("id, title, deadline, user_id")
     .eq("is_completed", false)
     .lte("deadline", threeDaysLater.toISOString())
     .gte("deadline", now.toISOString())
     .order("deadline", { ascending: true });
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (taskError) {
+    return NextResponse.json({ error: taskError.message }, { status: 500 });
   }
 
+  if (!urgentTasks || urgentTasks.length === 0) {
+    return NextResponse.json({ success: true, notified_users: 0 });
+  }
+
+  const userIds = Array.from(new Set(urgentTasks.map((t) => t.user_id)));
+  const { data: profiles, error: profileError } = await supabaseAdmin
+    .from("profiles")
+    .select("id, telegram_chat_id")
+    .in("id", userIds);
+
+  if (profileError) {
+    return NextResponse.json({ error: profileError.message }, { status: 500 });
+  }
+
+  const profileMap = new Map((profiles || []).map((p) => [p.id, p.telegram_chat_id]));
+
   const groupedTasks: Record<string, typeof urgentTasks> = {};
-  for (const task of urgentTasks || []) {
-    const profile = task.profiles as unknown as { telegram_chat_id: number | null };
-    if (profile?.telegram_chat_id) {
-      const chatId = String(profile.telegram_chat_id);
+  for (const task of urgentTasks) {
+    const telegramChatId = profileMap.get(task.user_id);
+    if (telegramChatId) {
+      const chatId = String(telegramChatId);
       if (!groupedTasks[chatId]) groupedTasks[chatId] = [];
       groupedTasks[chatId].push(task);
     }
