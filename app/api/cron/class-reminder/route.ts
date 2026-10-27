@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
 
   const { data: upcomingClasses, error: classError } = await supabaseAdmin
     .from("classes")
-    .select("id, course_name, start_time, room, lecturer, user_id")
+    .select("id, course_name, start_time, end_time, room, lecturer, user_id")
     .eq("day_of_week", dayOfWeek)
     .gte("start_time", `${hours}:${minutes}:00`)
     .lte("start_time", `${hours}:${minutes}:59`)
@@ -55,9 +55,11 @@ export async function GET(req: NextRequest) {
   for (const item of upcomingClasses) {
     const telegramChatId = profileMap.get(item.user_id);
     if (telegramChatId) {
-      const msg = `🔔 *Pengingat Kelas (1 Jam Lagi)*\n\n` +
+      const startFmt = item.start_time.slice(0, 5).replace(":", ".");
+      const endFmt = item.end_time ? ` - ${item.end_time.slice(0, 5).replace(":", ".")}` : "";
+      const msg = `🔔 *Pengingat Kuliah (1 Jam Lagi)*\n\n` +
                   `📚 *Mata Kuliah:* ${item.course_name}\n` +
-                  `⏰ *Waktu:* ${item.start_time.slice(0, 5)}\n` +
+                  `⏰ *Waktu:* ${startFmt}${endFmt} WIB\n` +
                   `📍 *Ruangan:* ${item.room || "-"}\n` +
                   `👨‍🏫 *Dosen:* ${item.lecturer || "-"}`;
 
