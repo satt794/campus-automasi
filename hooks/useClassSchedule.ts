@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 export interface ClassSession {
@@ -26,28 +26,30 @@ export const DAYS_OF_WEEK = [
 ];
 
 export function useClassSchedule(userId: string | undefined) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [classes, setClasses] = useState<ClassSession[]>([]);
   const [telegramChatId, setTelegramChatId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchClasses = useCallback(async () => {
     if (!userId) {
+      setClasses([]);
+      setTelegramChatId(null);
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
-      // Get profile telegram chat id
+      // Get profile telegram chat id for this user
       const { data: profile } = await supabase
         .from("profiles")
         .select("telegram_chat_id")
         .eq("id", userId)
         .maybeSingle();
 
-      if (profile) setTelegramChatId(profile.telegram_chat_id);
+      setTelegramChatId(profile?.telegram_chat_id ?? null);
 
-      // Get classes
+      // Get classes strictly for this user
       const { data } = await supabase
         .from("classes")
         .select("*")
@@ -55,9 +57,10 @@ export function useClassSchedule(userId: string | undefined) {
         .order("day_of_week", { ascending: true })
         .order("start_time", { ascending: true });
 
-      if (data) setClasses(data as ClassSession[]);
+      setClasses((data as ClassSession[]) || []);
     } catch (err) {
       console.error("Error fetching class schedule:", err);
+      setClasses([]);
     } finally {
       setLoading(false);
     }
@@ -89,7 +92,12 @@ export function useClassSchedule(userId: string | undefined) {
   };
 
   const deleteClass = async (id: string) => {
-    const { error } = await supabase.from("classes").delete().eq("id", id);
+    if (!userId) return { error: new Error("Belum login") };
+    const { error } = await supabase
+      .from("classes")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", userId);
     if (!error) {
       setClasses((prev) => prev.filter((c) => c.id !== id));
     }
@@ -97,14 +105,23 @@ export function useClassSchedule(userId: string | undefined) {
   };
 
   const updateTelegramChatId = async (chatId: number) => {
-    if (!userId) return;
-    const { error } = await supabase
-      .from("profiles")
-      .update({ telegram_chat_id: chatId })
-      .eq("id", userId);
-
-    if (!error) setTelegramChatId(chatId);
-    return { error };
+    if (!userId) return { error: new Error("Belum login") };
+    try {
+      const res = await fetch("/api/profile/telegram", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, telegramChatId: chatId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { error: new Error(data.error || "Gagal menyimpan Chat ID") };
+      }
+      setTelegramChatId(chatId);
+      return { error: null };
+    } catch (err: unknown) {
+      const error = err as Error;
+      return { error };
+    }
   };
 
   return {

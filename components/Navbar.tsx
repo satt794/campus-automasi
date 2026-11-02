@@ -10,6 +10,7 @@ interface NavbarProps {
   telegramChatId: number | null;
   onOpenTelegramSettings: () => void;
   userEmail?: string | null;
+  userName?: string | null;
   onOpenAuthModal?: () => void;
 }
 
@@ -19,6 +20,7 @@ export function Navbar({
   telegramChatId,
   onOpenTelegramSettings,
   userEmail,
+  userName,
   onOpenAuthModal,
 }: NavbarProps) {
   const tabs = [
@@ -78,15 +80,11 @@ export function Navbar({
             <button
               onClick={onOpenAuthModal}
               className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-all hover:scale-105"
-              title="Pengaturan Akun"
+              title="Pengaturan Akun & Privasi"
             >
               <User className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-              <span className="max-w-[110px] truncate">
-                {userEmail
-                  ? userEmail.includes("demo@")
-                    ? "Mode Demo"
-                    : userEmail.split("@")[0]
-                  : "Akun"}
+              <span className="max-w-[120px] truncate font-semibold">
+                {userName || (userEmail ? userEmail.split("@")[0] : "Akun")}
               </span>
             </button>
 

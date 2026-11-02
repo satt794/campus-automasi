@@ -34,6 +34,7 @@ export function FileManagerSection({ userId }: FileManagerSectionProps) {
 
   const loadFiles = useCallback(async () => {
     if (!userId) {
+      setFiles([]);
       setLoading(false);
       return;
     }
@@ -44,6 +45,7 @@ export function FileManagerSection({ userId }: FileManagerSectionProps) {
     } catch (err: unknown) {
       const error = err as Error;
       console.error("Error loading files:", error);
+      setFiles([]);
     } finally {
       setLoading(false);
     }

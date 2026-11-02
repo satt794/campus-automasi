@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   User,
@@ -10,35 +10,124 @@ import {
   X,
   AlertCircle,
   CheckCircle2,
-  Sparkles,
   Loader2,
+  ShieldCheck,
   KeyRound,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUserEmail: string | null;
+  currentUserName?: string | null;
   onAuthSuccess?: () => void;
+  onSignOutSuccess?: () => void;
 }
 
 export function AuthModal({
   isOpen,
   onClose,
   currentUserEmail,
+  currentUserName,
   onAuthSuccess,
+  onSignOutSuccess,
 }: AuthModalProps) {
   const supabase = createClient();
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [tab, setTab] = useState<"profile" | "switch" | "register">(
+    currentUserEmail ? "profile" : "switch"
+  );
+  const [fullName, setFullName] = useState(currentUserName || "");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
     message: string;
   } | null>(null);
 
+  useEffect(() => {
+    if (isOpen) {
+      setTab(currentUserEmail ? "profile" : "switch");
+      setFullName(currentUserName || "");
+      setFeedback(null);
+      setPassword("");
+      setConfirmPassword("");
+      setNewPassword("");
+    }
+  }, [isOpen, currentUserEmail, currentUserName]);
+
   if (!isOpen) return null;
+
+  const translateAuthError = (msg: string) => {
+    const lower = msg.toLowerCase();
+    if (lower.includes("invalid login credentials")) {
+      return "Email atau kata sandi salah. Silakan periksa kembali.";
+    }
+    if (lower.includes("already registered") || lower.includes("already exists")) {
+      return "Email ini sudah terdaftar. Silakan masuk menggunakan akun tersebut.";
+    }
+    return msg;
+  };
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setFeedback(null);
+
+    try {
+      const updates: {
+        password?: string;
+        data?: { full_name: string; name: string };
+      } = {};
+
+      if (fullName.trim()) {
+        updates.data = {
+          full_name: fullName.trim(),
+          name: fullName.trim(),
+        };
+      }
+
+      if (newPassword.trim()) {
+        if (newPassword.trim().length < 6) {
+          setFeedback({
+            type: "error",
+            message: "Kata sandi baru minimal harus 6 karakter.",
+          });
+          setLoading(false);
+          return;
+        }
+        updates.password = newPassword.trim();
+      }
+
+      const { error } = await supabase.auth.updateUser(updates);
+
+      if (error) {
+        setFeedback({ type: "error", message: error.message });
+      } else {
+        setNewPassword("");
+        setFeedback({
+          type: "success",
+          message: "Profil akun berhasil diperbarui!",
+        });
+        onAuthSuccess?.();
+      }
+    } catch (err: unknown) {
+      const error = err as Error;
+      setFeedback({
+        type: "error",
+        message: error.message || "Gagal memperbarui profil.",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,22 +135,25 @@ export function AuthModal({
     setFeedback(null);
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password: password,
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
       });
 
       if (error) {
-        setFeedback({ type: "error", message: error.message });
+        setFeedback({
+          type: "error",
+          message: translateAuthError(error.message),
+        });
       } else {
         setFeedback({
           type: "success",
-          message: "Berhasil masuk! Memuat data akun Anda...",
+          message: "Berhasil beralih akun! Memuat data pribadi Anda...",
         });
         setTimeout(() => {
           onAuthSuccess?.();
           onClose();
-        }, 1200);
+        }, 800);
       }
     } catch (err: unknown) {
       const error = err as Error;
@@ -73,63 +165,80 @@ export function AuthModal({
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setFeedback(null);
 
-    try {
-      const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
-        password: password,
-      });
-
-      if (error) {
-        setFeedback({ type: "error", message: error.message });
-      } else {
-        setFeedback({
-          type: "success",
-          message:
-            "Akun berhasil didaftarkan! Jika verifikasi email aktif, cek inbox Anda.",
-        });
-        setTimeout(() => {
-          onAuthSuccess?.();
-          onClose();
-        }, 1500);
-      }
-    } catch (err: unknown) {
-      const error = err as Error;
-      setFeedback({ type: "error", message: error.message || "Gagal mendaftar." });
-    } finally {
-      setLoading(false);
+    if (!fullName.trim()) {
+      setFeedback({ type: "error", message: "Nama lengkap wajib diisi." });
+      return;
     }
-  };
 
-  const handleUseDemo = async () => {
+    if (password.length < 6) {
+      setFeedback({
+        type: "error",
+        message: "Kata sandi minimal harus 6 karakter.",
+      });
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setFeedback({
+        type: "error",
+        message: "Konfirmasi kata sandi tidak cocok.",
+      });
+      return;
+    }
+
     setLoading(true);
-    setFeedback(null);
+
     try {
-      await fetch("/api/auth/ensure-demo", { method: "POST" });
-      const { error } = await supabase.auth.signInWithPassword({
-        email: "demo@campusautomasi.local",
-        password: "CampusAutomasiDemoPassword123!",
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fullName: fullName.trim(),
+          email: email.trim().toLowerCase(),
+          password,
+        }),
       });
 
-      if (error) {
-        setFeedback({ type: "error", message: error.message });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setFeedback({
+          type: "error",
+          message: data.error || "Gagal mendaftar akun baru.",
+        });
+        setLoading(false);
+        return;
+      }
+
+      // Sign in to the newly registered account
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+      });
+
+      if (signInError) {
+        setFeedback({
+          type: "success",
+          message: "Akun berhasil dibuat! Silakan masuk.",
+        });
+        setTab("switch");
       } else {
         setFeedback({
           type: "success",
-          message: "Berhasil beralih ke Akun Demo!",
+          message: "Akun baru berhasil dibuat & aktif!",
         });
         setTimeout(() => {
           onAuthSuccess?.();
           onClose();
-        }, 1000);
+        }, 900);
       }
     } catch (err: unknown) {
       const error = err as Error;
       setFeedback({
         type: "error",
-        message: error.message || "Gagal masuk ke akun demo.",
+        message: error.message || "Gagal mendaftar.",
       });
     } finally {
       setLoading(false);
@@ -138,19 +247,17 @@ export function AuthModal({
 
   const handleSignOut = async () => {
     setLoading(true);
+    setFeedback(null);
     try {
       await supabase.auth.signOut();
-      setFeedback({
-        type: "success",
-        message: "Berhasil keluar dari akun.",
-      });
-      setTimeout(() => {
-        onAuthSuccess?.();
-        onClose();
-      }, 1000);
+      onSignOutSuccess?.();
+      onClose();
     } catch (err: unknown) {
       const error = err as Error;
-      setFeedback({ type: "error", message: error.message || "Gagal keluar." });
+      setFeedback({
+        type: "error",
+        message: error.message || "Gagal keluar dari akun.",
+      });
     } finally {
       setLoading(false);
     }
@@ -166,66 +273,65 @@ export function AuthModal({
           <X className="w-5 h-5" />
         </button>
 
+        {/* Modal Header */}
         <div className="flex items-center space-x-3 mb-5">
           <div className="p-3 rounded-2xl bg-indigo-50 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400">
             <User className="w-6 h-6" />
           </div>
           <div>
             <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-              Akun Mahasiswa
+              Pengaturan Akun & Privasi
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Kelola sesi login dan isolasi data pribadi Anda.
+              Data Anda terisolasi penuh untuk akun yang sedang aktif.
             </p>
           </div>
         </div>
 
-        {currentUserEmail && (
-          <div className="mb-5 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 flex items-center justify-between">
-            <div>
-              <span className="text-[10px] uppercase font-semibold text-slate-400">
-                Sesi Aktif
-              </span>
-              <p className="text-xs font-medium text-slate-800 dark:text-slate-100 truncate max-w-[200px]">
-                {currentUserEmail}
-              </p>
-            </div>
-            <button
-              onClick={handleSignOut}
-              disabled={loading}
-              className="px-3 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-semibold hover:bg-rose-100 transition-colors flex items-center space-x-1"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Keluar</span>
-            </button>
-          </div>
-        )}
-
-        {/* Tab Selector */}
-        <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 mb-4">
+        {/* Navigation Tabs */}
+        <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 mb-5">
           <button
             type="button"
             onClick={() => {
-              setMode("login");
+              setTab("profile");
               setFeedback(null);
             }}
-            className={`py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center space-x-1.5 ${
-              mode === "login"
+            className={`py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center space-x-1 ${
+              tab === "profile"
+                ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs"
+                : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>Profil</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setTab("switch");
+              setFeedback(null);
+            }}
+            className={`py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center space-x-1 ${
+              tab === "switch"
                 ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs"
                 : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
             }`}
           >
             <LogIn className="w-3.5 h-3.5" />
-            <span>Masuk</span>
+            <span>Ganti Akun</span>
           </button>
           <button
             type="button"
             onClick={() => {
-              setMode("register");
+              setTab("register");
+              setFullName("");
+              setEmail("");
+              setPassword("");
+              setConfirmPassword("");
               setFeedback(null);
             }}
-            className={`py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center space-x-1.5 ${
-              mode === "register"
+            className={`py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center space-x-1 ${
+              tab === "register"
                 ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs"
                 : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
             }`}
@@ -235,88 +341,282 @@ export function AuthModal({
           </button>
         </div>
 
+        {/* Feedback Alert */}
         {feedback && (
           <div
-            className={`mb-4 p-3 rounded-xl flex items-center space-x-2 text-xs font-medium ${
+            className={`mb-4 p-3 rounded-xl flex items-start space-x-2 text-xs font-medium ${
               feedback.type === "success"
                 ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
                 : "bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800"
             }`}
           >
             {feedback.type === "success" ? (
-              <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+              <CheckCircle2 className="w-4 h-4 flex-shrink-0 mt-0.5" />
             ) : (
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
             )}
             <span>{feedback.message}</span>
           </div>
         )}
 
-        <form
-          onSubmit={mode === "login" ? handleLogin : handleRegister}
-          className="space-y-3"
-        >
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Email Mahasiswa
-            </label>
-            <input
-              type="email"
-              required
-              placeholder="nama@kampus.ac.id"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
+        {/* TAB 1: PROFILE & LOGOUT */}
+        {tab === "profile" && (
+          <div className="space-y-4">
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center space-x-1">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Workspace Pribadi Aktif</span>
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300">
+                  Terisolasi
+                </span>
+              </div>
+              <div className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                {currentUserName || currentUserEmail?.split("@")[0] || "Mahasiswa"}
+              </div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                {currentUserEmail}
+              </div>
+            </div>
+
+            <form onSubmit={handleUpdateProfile} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Nama Tampilan
+                </label>
+                <input
+                  type="text"
+                  placeholder="Nama lengkap Anda"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Ubah Kata Sandi Baru (Opsional)
+                </label>
+                <div className="relative">
+                  <KeyRound className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Kosongkan jika tidak ingin mengubah"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full pl-9 pr-9 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-3.5 h-3.5" />
+                    ) : (
+                      <Eye className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-sm transition-colors disabled:opacity-50 flex items-center justify-center space-x-1.5"
+              >
+                {loading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <span>Simpan Perubahan Profil</span>
+                )}
+              </button>
+            </form>
+
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={handleSignOut}
+                disabled={loading}
+                className="w-full py-2.5 px-4 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-950/70 text-rose-600 dark:text-rose-400 font-semibold text-xs transition-colors flex items-center justify-center space-x-1.5"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Keluar dari Akun (Logout)</span>
+              </button>
+            </div>
           </div>
+        )}
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Kata Sandi
-            </label>
-            <input
-              type="password"
-              required
-              minLength={6}
-              placeholder="Minimal 6 karakter"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
+        {/* TAB 2: SWITCH / LOGIN */}
+        {tab === "switch" && (
+          <form onSubmit={handleLogin} className="space-y-3.5">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Email Akun
+              </label>
+              <div className="relative">
+                <Mail className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="email"
+                  required
+                  placeholder="nama@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-sm transition-colors disabled:opacity-50 flex items-center justify-center space-x-1.5"
-          >
-            {loading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : mode === "login" ? (
-              <>
-                <LogIn className="w-4 h-4" />
-                <span>Masuk Sekarang</span>
-              </>
-            ) : (
-              <>
-                <UserPlus className="w-4 h-4" />
-                <span>Daftar Akun Baru</span>
-              </>
-            )}
-          </button>
-        </form>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Kata Sandi
+              </label>
+              <div className="relative">
+                <Lock className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type={showPassword ? "text" : "password"}
+                  required
+                  minLength={6}
+                  placeholder="Kata sandi akun"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-9 pr-9 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  tabIndex={-1}
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-3.5 h-3.5" />
+                  ) : (
+                    <Eye className="w-3.5 h-3.5" />
+                  )}
+                </button>
+              </div>
+            </div>
 
-        <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-          <button
-            type="button"
-            onClick={handleUseDemo}
-            disabled={loading}
-            className="w-full py-2 px-3 rounded-xl border border-dashed border-indigo-300 dark:border-indigo-800/80 bg-indigo-50/50 dark:bg-indigo-950/20 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-xs font-medium transition-colors flex items-center justify-center space-x-1.5"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
-            <span>Gunakan Akun Demo (Instant 1-Click Login)</span>
-          </button>
-        </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-sm transition-colors disabled:opacity-50 flex items-center justify-center space-x-1.5"
+            >
+              {loading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  <LogIn className="w-4 h-4" />
+                  <span>Masuk ke Akun Ini</span>
+                </>
+              )}
+            </button>
+          </form>
+        )}
+
+        {/* TAB 3: REGISTER NEW ACCOUNT */}
+        {tab === "register" && (
+          <form onSubmit={handleRegister} className="space-y-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Nama Lengkap
+              </label>
+              <div className="relative">
+                <User className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  required
+                  placeholder="Contoh: Budi Santoso"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="w-full pl-9 pr-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Alamat Email
+              </label>
+              <div className="relative">
+                <Mail className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="email"
+                  required
+                  placeholder="nama@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full pl-9 pr-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Kata Sandi
+              </label>
+              <div className="relative">
+                <Lock className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type={showPassword ? "text" : "password"}
+                  required
+                  minLength={6}
+                  placeholder="Minimal 6 karakter"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-9 pr-9 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  tabIndex={-1}
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-3.5 h-3.5" />
+                  ) : (
+                    <Eye className="w-3.5 h-3.5" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Konfirmasi Kata Sandi
+              </label>
+              <div className="relative">
+                <Lock className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type={showPassword ? "text" : "password"}
+                  required
+                  minLength={6}
+                  placeholder="Ulangi kata sandi"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full pl-9 pr-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-sm transition-colors disabled:opacity-50 flex items-center justify-center space-x-1.5"
+            >
+              {loading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  <UserPlus className="w-4 h-4" />
+                  <span>Daftar & Masuk Akun Baru</span>
+                </>
+              )}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );

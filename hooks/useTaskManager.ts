@@ -13,12 +13,13 @@ export interface Task {
 }
 
 export function useTaskManager(userId: string | undefined) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchTasks = useCallback(async () => {
     if (!userId) {
+      setTasks([]);
       setLoading(false);
       return;
     }
@@ -30,9 +31,10 @@ export function useTaskManager(userId: string | undefined) {
         .eq("user_id", userId)
         .order("deadline", { ascending: true });
 
-      if (data) setTasks(data as Task[]);
+      setTasks((data as Task[]) || []);
     } catch (err) {
       console.error("Error fetching tasks:", err);
+      setTasks([]);
     } finally {
       setLoading(false);
     }
@@ -81,10 +83,12 @@ export function useTaskManager(userId: string | undefined) {
   };
 
   const toggleTaskStatus = async (id: string, currentStatus: boolean) => {
+    if (!userId) return { error: new Error("Belum login") };
     const { error } = await supabase
       .from("tasks")
       .update({ is_completed: !currentStatus })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("user_id", userId);
 
     if (!error) {
       setTasks((prev) =>
@@ -95,7 +99,12 @@ export function useTaskManager(userId: string | undefined) {
   };
 
   const deleteTask = async (id: string) => {
-    const { error } = await supabase.from("tasks").delete().eq("id", id);
+    if (!userId) return { error: new Error("Belum login") };
+    const { error } = await supabase
+      .from("tasks")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", userId);
     if (!error) setTasks((prev) => prev.filter((t) => t.id !== id));
     return { error };
   };

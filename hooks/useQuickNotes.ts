@@ -1,21 +1,31 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 export type SaveStatus = "saved" | "saving" | "unsaved" | "error";
 
 export function useQuickNotes(userId: string | undefined) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [content, setContent] = useState<string>("");
   const [status, setStatus] = useState<SaveStatus>("saved");
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const isInitialLoad = useRef(true);
 
-  // Initial Fetch
+  // Initial Fetch & Reset when userId changes
   useEffect(() => {
-    if (!userId) return;
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    if (!userId) {
+      setContent("");
+      setLastSavedAt(null);
+      setStatus("saved");
+      return;
+    }
+
+    let isMounted = true;
 
     async function loadNote() {
       try {
@@ -25,18 +35,26 @@ export function useQuickNotes(userId: string | undefined) {
           .eq("user_id", userId)
           .maybeSingle();
 
+        if (!isMounted) return;
+
         if (!error && data) {
           setContent(data.content || "");
-          if (data.updated_at) setLastSavedAt(new Date(data.updated_at));
+          setLastSavedAt(data.updated_at ? new Date(data.updated_at) : null);
+        } else {
+          setContent("");
+          setLastSavedAt(null);
         }
+        setStatus("saved");
       } catch (err) {
         console.error("Error loading note:", err);
-      } finally {
-        isInitialLoad.current = false;
       }
     }
 
     loadNote();
+
+    return () => {
+      isMounted = false;
+    };
   }, [userId, supabase]);
 
   // Database Upsert Callback
@@ -81,7 +99,7 @@ export function useQuickNotes(userId: string | undefined) {
 
     debounceTimerRef.current = setTimeout(() => {
       saveToDatabase(newText);
-    }, 1500); // exactly 1.5s
+    }, 1500);
   };
 
   useEffect(() => {

@@ -81,6 +81,8 @@ export function ClassScheduleSection({ userId }: ClassScheduleSectionProps) {
   useEffect(() => {
     if (telegramChatId) {
       setInputChatId(String(telegramChatId));
+    } else {
+      setInputChatId("");
     }
   }, [telegramChatId]);
 

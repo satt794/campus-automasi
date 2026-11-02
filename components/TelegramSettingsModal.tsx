@@ -38,6 +38,11 @@ export function TelegramSettingsModal({
     text: string;
   } | null>(null);
 
+  React.useEffect(() => {
+    setChatIdInput(currentChatId ? String(currentChatId) : "");
+    setStatusMessage(null);
+  }, [currentChatId, userId, isOpen]);
+
   if (!isOpen) return null;
 
   const handleSave = async () => {
@@ -62,22 +67,22 @@ export function TelegramSettingsModal({
     setStatusMessage(null);
 
     try {
-      const { error } = await supabase
-        .from("profiles")
-        .upsert(
-          { id: userId, telegram_chat_id: num, updated_at: new Date().toISOString() },
-          { onConflict: "id" }
-        );
+      const res = await fetch("/api/profile/telegram", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, telegramChatId: num }),
+      });
+      const data = await res.json();
 
-      if (error) {
+      if (!res.ok) {
         setStatusMessage({
           type: "error",
-          text: `Gagal menyimpan: ${error.message}`,
+          text: `Gagal menyimpan: ${data.error || "Terjadi kesalahan"}`,
         });
       } else {
         setStatusMessage({
           type: "success",
-          text: "Chat ID berhasil disimpan ke akun Anda!",
+          text: "Chat ID berhasil disimpan ke akun pribadi Anda!",
         });
         onSaveSuccess(num);
       }

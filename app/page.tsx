@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Navbar } from "@/components/Navbar";
 import { FinanceSection } from "@/components/FinanceSection";
@@ -10,6 +10,7 @@ import { QuickNotesSection } from "@/components/QuickNotesSection";
 import { FileManagerSection } from "@/components/FileManagerSection";
 import { TelegramSettingsModal } from "@/components/TelegramSettingsModal";
 import { AuthModal } from "@/components/AuthModal";
+import { AuthScreen } from "@/components/AuthScreen";
 import {
   Wallet,
   Calendar,
@@ -18,96 +19,130 @@ import {
   HardDrive,
   ArrowRight,
   Sparkles,
+  ShieldCheck,
+  Loader2,
 } from "lucide-react";
 
 export default function DashboardPage() {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
+  const [authChecking, setAuthChecking] = useState<boolean>(true);
   const [userId, setUserId] = useState<string | undefined>(undefined);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("overview");
   const [telegramChatId, setTelegramChatId] = useState<number | null>(null);
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
+  const clearUserState = useCallback(() => {
+    setUserId(undefined);
+    setUserEmail(null);
+    setUserName(null);
+    setTelegramChatId(null);
+  }, []);
+
   const initUser = useCallback(async () => {
     try {
-      // 1. Check existing authenticated session
       const {
         data: { user: currentUser },
       } = await supabase.auth.getUser();
 
-      let activeUser = currentUser;
-
-      // 2. If no user session, auto sign-in to demo account so everything works out of the box
-      if (!activeUser) {
-        try {
-          await fetch("/api/auth/ensure-demo", { method: "POST" });
-          const { data: signInData } = await supabase.auth.signInWithPassword({
-            email: "demo@campusautomasi.local",
-            password: "CampusAutomasiDemoPassword123!",
-          });
-          activeUser = signInData?.user || null;
-        } catch (e) {
-          console.error("Auto demo sign-in error:", e);
-        }
+      // Jika sesi lama masih nyangkut di akun demo bersama, otomatis keluarkan
+      // agar pengguna menggunakan akun pribadinya masing-masing
+      if (currentUser?.email === "demo@campusautomasi.local") {
+        await supabase.auth.signOut();
+        clearUserState();
+        setAuthChecking(false);
+        return;
       }
 
-      if (activeUser) {
-        setUserId(activeUser.id);
-        setUserEmail(activeUser.email || "Mahasiswa");
+      if (currentUser) {
+        setUserId(currentUser.id);
+        setUserEmail(currentUser.email || null);
+        setUserName(
+          currentUser.user_metadata?.full_name ||
+            currentUser.user_metadata?.name ||
+            currentUser.email?.split("@")[0] ||
+            "Mahasiswa"
+        );
 
         const { data: profile } = await supabase
           .from("profiles")
           .select("telegram_chat_id")
-          .eq("id", activeUser.id)
+          .eq("id", currentUser.id)
           .maybeSingle();
 
-        if (profile?.telegram_chat_id) {
-          setTelegramChatId(profile.telegram_chat_id);
-        } else {
-          setTelegramChatId(null);
-        }
+        setTelegramChatId(profile?.telegram_chat_id ?? null);
       } else {
-        setUserId(undefined);
-        setUserEmail(null);
-        setTelegramChatId(null);
+        clearUserState();
       }
     } catch (err) {
       console.error("Auth init error:", err);
+      clearUserState();
+    } finally {
+      setAuthChecking(false);
     }
-  }, [supabase]);
+  }, [supabase, clearUserState]);
 
   useEffect(() => {
     initUser();
 
-    // Listen for auth state changes (login, logout, switch account)
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        setUserId(session.user.id);
-        setUserEmail(session.user.email || "Mahasiswa");
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("telegram_chat_id")
-          .eq("id", session.user.id)
-          .maybeSingle();
-
-        if (profile?.telegram_chat_id) {
-          setTelegramChatId(profile.telegram_chat_id);
-        } else {
-          setTelegramChatId(null);
-        }
-      } else {
-        // If logged out, re-run initUser to re-attach demo account cleanly
-        initUser();
+      if (event === "SIGNED_OUT" || !session?.user) {
+        clearUserState();
+        setAuthChecking(false);
+        return;
       }
+
+      if (session.user.email === "demo@campusautomasi.local") {
+        await supabase.auth.signOut();
+        clearUserState();
+        setAuthChecking(false);
+        return;
+      }
+
+      setUserId(session.user.id);
+      setUserEmail(session.user.email || null);
+      setUserName(
+        session.user.user_metadata?.full_name ||
+          session.user.user_metadata?.name ||
+          session.user.email?.split("@")[0] ||
+          "Mahasiswa"
+      );
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("telegram_chat_id")
+        .eq("id", session.user.id)
+        .maybeSingle();
+
+      setTelegramChatId(profile?.telegram_chat_id ?? null);
+      setAuthChecking(false);
     });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, [initUser, supabase]);
+  }, [initUser, supabase, clearUserState]);
+
+  // Loading state saat mengecek sesi login
+  if (authChecking) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 space-y-3">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-600 dark:text-indigo-400" />
+        <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+          Memverifikasi sesi akun pribadi Anda...
+        </p>
+      </div>
+    );
+  }
+
+  // Jika belum login, tampilkan halaman Login & Daftar Akun (Auth Gate)
+  if (!userId) {
+    return <AuthScreen onAuthSuccess={() => initUser()} />;
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
@@ -118,6 +153,7 @@ export default function DashboardPage() {
         telegramChatId={telegramChatId}
         onOpenTelegramSettings={() => setIsTelegramModalOpen(true)}
         userEmail={userEmail}
+        userName={userName}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
       />
 
@@ -129,15 +165,25 @@ export default function DashboardPage() {
             {/* Hero Banner */}
             <div className="p-8 rounded-3xl bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-800 text-white shadow-xl shadow-indigo-500/15 relative overflow-hidden">
               <div className="relative z-10 max-w-2xl">
-                <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-xs font-semibold uppercase tracking-wider mb-4">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                  <span>Sistem Otomasi Kampus Terpadu</span>
-                </span>
+                <div className="flex flex-wrap items-center gap-2 mb-4">
+                  <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-xs font-semibold uppercase tracking-wider">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Sistem Otomasi Kampus Terpadu</span>
+                  </span>
+                  <span className="inline-flex items-center space-x-1 px-3 py-1 rounded-full bg-emerald-500/25 border border-emerald-300/30 backdrop-blur-md text-xs font-semibold text-emerald-100">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-300" />
+                    <span>Workspace Pribadi: {userName}</span>
+                  </span>
+                </div>
                 <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-                  Selamat Datang di Campus Automasi!
+                  Halo, {userName}! 👋
                 </h1>
                 <p className="mt-3 text-indigo-100 text-sm sm:text-base leading-relaxed">
-                  Kelola rutinitas perkuliahan, kontrol keuangan mahasiswa, simpan materi kuliah, dan biarkan Bot Telegram mengingatkan kelas Anda secara otomatis.
+                  Seluruh data keuangan, jadwal kuliah, tugas, catatan, dan berkas di bawah ini terisolasi secara privat khusus untuk akun{" "}
+                  <span className="font-semibold underline decoration-indigo-300">
+                    {userEmail}
+                  </span>
+                  .
                 </p>
               </div>
 
@@ -149,7 +195,7 @@ export default function DashboardPage() {
             {/* Quick Navigation Cards */}
             <div>
               <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-4">
-                Modul Aplikasi
+                Modul Aplikasi Pribadi Anda
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                 {/* Finance Card */}
@@ -167,7 +213,7 @@ export default function DashboardPage() {
                     Finance Tracker
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                    Catat pengeluaran makan, print, & transportasi dengan kalkulasi sisa budget mingguan.
+                    Catat pengeluaran makan, print, & transportasi dengan kalkulasi sisa budget mingguan pribadi Anda.
                   </p>
                 </div>
 
@@ -186,7 +232,7 @@ export default function DashboardPage() {
                     Jadwal & Bot Telegram
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                    Pengingat otomatis via bot Telegram tepat 1 jam sebelum jadwal kuliah dimulai.
+                    Pengingat otomatis via bot Telegram tepat 1 jam sebelum jadwal kuliah Anda dimulai.
                   </p>
                 </div>
 
@@ -243,7 +289,7 @@ export default function DashboardPage() {
                     Manajemen Berkas Kuliah
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                    Simpan dan unduh dokumen presentasi (.ppt, .pptx) dan materi kuliah (.pdf) secara aman.
+                    Simpan dan unduh dokumen presentasi (.ppt, .pptx) dan materi kuliah (.pdf) di folder pribadi Anda.
                   </p>
                 </div>
               </div>
@@ -251,16 +297,16 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {activeTab === "finance" && <FinanceSection userId={userId} />}
-        {activeTab === "classes" && <ClassScheduleSection userId={userId} />}
-        {activeTab === "tasks" && <TaskManagementSection userId={userId} />}
-        {activeTab === "notes" && <QuickNotesSection userId={userId} />}
-        {activeTab === "files" && <FileManagerSection userId={userId} />}
+        {activeTab === "finance" && <FinanceSection key={userId} userId={userId} />}
+        {activeTab === "classes" && <ClassScheduleSection key={userId} userId={userId} />}
+        {activeTab === "tasks" && <TaskManagementSection key={userId} userId={userId} />}
+        {activeTab === "notes" && <QuickNotesSection key={userId} userId={userId} />}
+        {activeTab === "files" && <FileManagerSection key={userId} userId={userId} />}
       </main>
 
       {/* Footer */}
       <footer className="border-t border-slate-200 dark:border-slate-800 py-6 text-center text-xs text-slate-500 dark:text-slate-400">
-        Campus Automasi &copy; {new Date().getFullYear()} — Dirancang untuk Efisiensi & Produktivitas Mahasiswa.
+        Campus Automasi &copy; {new Date().getFullYear()} — Dirancang untuk Efisiensi & Privasi Mahasiswa.
       </footer>
 
       {/* Telegram Settings Modal */}
@@ -279,7 +325,9 @@ export default function DashboardPage() {
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
         currentUserEmail={userEmail}
+        currentUserName={userName}
         onAuthSuccess={() => initUser()}
+        onSignOutSuccess={() => clearUserState()}
       />
     </div>
   );

@@ -15,7 +15,7 @@ export interface Transaction {
 }
 
 export function useFinanceTracker(userId: string | undefined) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [weeklyBudget, setWeeklyBudget] = useState<number>(0);
   const [loading, setLoading] = useState(true);
@@ -32,31 +32,36 @@ export function useFinanceTracker(userId: string | undefined) {
 
   const fetchData = useCallback(async () => {
     if (!userId) {
+      setTransactions([]);
+      setWeeklyBudget(0);
       setLoading(false);
       return;
     }
     setLoading(true);
 
     try {
-      // Fetch Profile for Weekly Budget
+      // Fetch Profile for Weekly Budget (strictly for this userId)
       const { data: profile } = await supabase
         .from("profiles")
         .select("weekly_budget")
         .eq("id", userId)
         .maybeSingle();
 
-      if (profile) setWeeklyBudget(Number(profile.weekly_budget) || 0);
+      setWeeklyBudget(profile ? Number(profile.weekly_budget) || 0 : 0);
 
-      // Fetch Transactions
+      // Fetch Transactions (strictly for this userId)
       const { data: txs } = await supabase
         .from("transactions")
         .select("*")
         .eq("user_id", userId)
-        .order("transaction_date", { ascending: false });
+        .order("transaction_date", { ascending: false })
+        .order("created_at", { ascending: false });
 
-      if (txs) setTransactions(txs as Transaction[]);
+      setTransactions((txs as Transaction[]) || []);
     } catch (err) {
       console.error("Error fetching finance data:", err);
+      setTransactions([]);
+      setWeeklyBudget(0);
     } finally {
       setLoading(false);
     }
@@ -114,7 +119,12 @@ export function useFinanceTracker(userId: string | undefined) {
   };
 
   const deleteTransaction = async (id: string) => {
-    const { error } = await supabase.from("transactions").delete().eq("id", id);
+    if (!userId) return { error: new Error("Belum login") };
+    const { error } = await supabase
+      .from("transactions")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", userId);
     if (!error) {
       setTransactions((prev) => prev.filter((t) => t.id !== id));
     }
@@ -122,11 +132,17 @@ export function useFinanceTracker(userId: string | undefined) {
   };
 
   const updateBudget = async (newBudget: number) => {
-    if (!userId) return;
+    if (!userId) return { error: new Error("Belum login") };
     const { error } = await supabase
       .from("profiles")
-      .update({ weekly_budget: newBudget })
-      .eq("id", userId);
+      .upsert(
+        {
+          id: userId,
+          weekly_budget: newBudget,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "id" }
+      );
 
     if (!error) setWeeklyBudget(newBudget);
     return { error };
